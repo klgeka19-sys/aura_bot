@@ -1,0 +1,8 @@
+{
+  "name": "Aura — Персональная ИИ-собеседница",
+  "description": "Интеллектуальная ИИ-девушка с глубокими диалогами, анимированным эмоциональным аватаром и долговременной памятью.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
