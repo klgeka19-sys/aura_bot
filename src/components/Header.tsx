@@ -226,25 +226,15 @@ export const Header: React.FC<HeaderProps> = ({
           >
             Настройки
           </button>
-          {onOpenSourceCode && (
-            <button
-              onClick={onOpenSourceCode}
-              className="hover:text-pink-200 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 text-pink-300/90 font-medium"
-              title="Открыть просмотр и экспорт исходного кода приложения"
-            >
-              <Code2 className="w-3.5 h-3.5 text-pink-400" />
-              <span>Экспорт кода</span>
-            </button>
-          )}
         </nav>
 
         {onOpenSourceCode && (
           <button
             onClick={onOpenSourceCode}
-            className="lg:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-pink-500/15 hover:bg-pink-500/25 text-pink-200 hover:text-white border border-pink-500/35 text-xs font-medium transition-all shadow-sm shrink-0"
-            title="Открыть просмотр, копирование и экспорт исходного кода приложения"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-pink-500/20 via-rose-500/15 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 text-pink-200 hover:text-white border border-pink-500/40 text-xs font-semibold transition-all shadow-sm shrink-0 active:scale-95 group"
+            title="Экспорт и копирование исходного кода проекта (скопировать файлы или отправить на GitHub)"
           >
-            <Code2 className="w-3.5 h-3.5 text-pink-400" />
+            <Code2 className="w-3.5 h-3.5 text-pink-400 group-hover:scale-110 transition-transform" />
             <span className="hidden xs:inline">Экспорт кода</span>
             <span className="xs:hidden">Код</span>
           </button>

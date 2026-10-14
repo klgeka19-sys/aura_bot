@@ -15,7 +15,9 @@ import {
   Terminal,
   RefreshCw,
   Search,
+  Layers,
 } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface ProjectFile {
   path: string;
@@ -35,7 +37,7 @@ export const SourceCodeExportModal: React.FC<SourceCodeExportModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'files' | 'github'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'bundle' | 'github'>('files');
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [fullBundle, setFullBundle] = useState<string>('');
   const [totalLines, setTotalLines] = useState<number>(0);
@@ -90,18 +92,22 @@ export const SourceCodeExportModal: React.FC<SourceCodeExportModalProps> = ({
       f.category.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleCopyCurrentFile = () => {
+  const handleCopyCurrentFile = async () => {
     if (!currentFile) return;
-    navigator.clipboard.writeText(currentFile.content);
-    setCopiedFile(true);
-    setTimeout(() => setCopiedFile(false), 2000);
+    const ok = await copyToClipboard(currentFile.content);
+    if (ok) {
+      setCopiedFile(true);
+      setTimeout(() => setCopiedFile(false), 2500);
+    }
   };
 
-  const handleCopyAllCode = () => {
+  const handleCopyAllCode = async () => {
     if (!fullBundle) return;
-    navigator.clipboard.writeText(fullBundle);
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
+    const ok = await copyToClipboard(fullBundle);
+    if (ok) {
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 2500);
+    }
   };
 
   const handleDownloadCurrentFile = () => {
@@ -176,10 +182,12 @@ git branch -M ${branch.trim() || 'main'}
 # 3. Отправить все файлы приложения на GitHub:
 git push -u origin ${branch.trim() || 'main'} --force`;
 
-  const handleCopyBash = () => {
-    navigator.clipboard.writeText(bashCommands);
-    setCopiedBash(true);
-    setTimeout(() => setCopiedBash(false), 2000);
+  const handleCopyBash = async () => {
+    const ok = await copyToClipboard(bashCommands);
+    if (ok) {
+      setCopiedBash(true);
+      setTimeout(() => setCopiedBash(false), 2500);
+    }
   };
 
   return (
@@ -230,7 +238,19 @@ git push -u origin ${branch.trim() || 'main'} --force`;
                 }`}
               >
                 <FolderTree className="w-3.5 h-3.5 text-rose-400" />
-                <span>Файлы проекта ({files.length})</span>
+                <span>По файлам ({files.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('bundle')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'bundle'
+                    ? 'bg-rose-500/20 text-rose-200 border border-rose-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-rose-400" />
+                <span>Весь код одним текстом</span>
               </button>
 
               <button
@@ -250,17 +270,17 @@ git push -u origin ${branch.trim() || 'main'} --force`;
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCopyAllCode}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition-all shadow-sm"
-                title="Скопировать все файлы проекта одним кликом"
+                className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-rose-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-semibold border border-rose-400/40 shadow-lg shadow-rose-950/50 hover:shadow-rose-900/60 transition-all active:scale-95"
+                title="Скопировать все файлы проекта одним кликом в буфер обмена"
               >
                 {copiedAll ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-300">Весь проект скопирован!</span>
+                    <Check className="w-4 h-4 text-emerald-300" />
+                    <span className="text-emerald-100 font-bold">Весь код скопирован!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-3.5 h-3.5 text-amber-400" />
+                    <Copy className="w-4 h-4 text-white" />
                     <span>Скопировать весь код проекта</span>
                   </>
                 )}
@@ -268,11 +288,11 @@ git push -u origin ${branch.trim() || 'main'} --force`;
 
               <button
                 onClick={handleDownloadAllBundle}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-medium transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition-all shadow-sm"
                 title="Скачать все файлы проекта в виде текстового архива"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Скачать все файлы</span>
+                <span className="hidden sm:inline">Скачать (.txt)</span>
               </button>
             </div>
           </div>
@@ -401,7 +421,71 @@ git push -u origin ${branch.trim() || 'main'} --force`;
             </div>
           )}
 
-          {/* Tab 2: GitHub Push Form & Manual Push Guide */}
+          {/* Tab 2: Full Project Unified Bundle View */}
+          {activeTab === 'bundle' && (
+            <div className="flex-1 min-h-0 flex flex-col bg-slate-900/60 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 p-3.5 border-b border-slate-800 bg-slate-950/80 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                      <span>Полный исходный код приложения</span>
+                      <span className="text-[11px] px-2 py-0.2 rounded-full bg-slate-800 text-rose-300 border border-slate-700">
+                        {files.length} файлов • {totalLines.toLocaleString()} строк
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 hidden sm:block">
+                      Все файлы проекта объединены с аккуратными заголовками и готовы к копированию
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleCopyAllCode}
+                    className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white text-xs font-semibold shadow-md transition-all active:scale-95"
+                  >
+                    {copiedAll ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-300" />
+                        <span className="text-emerald-100 font-bold">Скопировано!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 text-white" />
+                        <span>Скопировать весь код</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleDownloadAllBundle}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                    title="Скачать файл со всем кодом"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto p-4 bg-[#07090e] font-mono text-xs leading-relaxed text-slate-200 select-text scrollbar-thin">
+                {isLoading ? (
+                  <div className="flex items-center justify-center p-12 text-slate-400 gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin text-rose-400" />
+                    <span>Формирование полного исходного кода...</span>
+                  </div>
+                ) : (
+                  <pre className="whitespace-pre">
+                    <code>{fullBundle}</code>
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 3: GitHub Push Form & Manual Push Guide */}
           {activeTab === 'github' && (
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
               {/* Automated Git Push Form */}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Sliders, RotateCcw, Download, Upload, Check, Heart, Sparkles, Brain, User, Wand2, Camera, Code2 } from 'lucide-react';
+import { X, Sliders, RotateCcw, Download, Upload, Check, Heart, Sparkles, Brain, User, Wand2, Camera, Code2, Image as ImageIcon } from 'lucide-react';
 import { Archetype, CompanionProfile } from '../types';
 import { SpeechService } from '../services/speech';
 import { ANIME_AVATARS, REALISTIC_AVATARS } from '../services/storage';
@@ -14,6 +14,7 @@ interface CompanionSettingsModalProps {
   onExportData: () => void;
   onImportData: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onOpenSourceCode?: () => void;
+  onOpenWallpaper?: () => void;
 }
 
 const ARCHETYPES: Array<{ id: Archetype; title: string; desc: string; icon: React.ReactNode }> = [
@@ -52,6 +53,7 @@ export const CompanionSettingsModal: React.FC<CompanionSettingsModalProps> = ({
   onExportData,
   onImportData,
   onOpenSourceCode,
+  onOpenWallpaper,
 }) => {
   const [formData, setFormData] = useState<CompanionProfile>({ ...profile });
   const [showConfirmReset, setShowConfirmReset] = useState(false);
@@ -326,6 +328,20 @@ export const CompanionSettingsModal: React.FC<CompanionSettingsModalProps> = ({
                   >
                     <Code2 className="w-3.5 h-3.5 text-pink-400" />
                     <span>Экспорт исходного кода</span>
+                  </button>
+                )}
+
+                {onOpenWallpaper && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenWallpaper();
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 border border-rose-500/30 text-xs font-medium transition-colors"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Обои чата</span>
                   </button>
                 )}
 

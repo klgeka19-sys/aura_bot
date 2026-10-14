@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+// Официальный ESM-модуль @google/genai (в браузере доступен из 'https://esm.run/@google/genai')
+import { GoogleGenAI } from '@google/genai';
 import { Header } from './components/Header';
 import { AvatarStage } from './components/AvatarStage';
 import { ChatFeed } from './components/ChatFeed';
@@ -10,8 +12,12 @@ import { DeepTopicsDrawer } from './components/DeepTopicsDrawer';
 import { MicrophonePermissionModal } from './components/MicrophonePermissionModal';
 import { AvatarSelectModal } from './components/AvatarSelectModal';
 import { RelationshipSummaryModal } from './components/RelationshipSummaryModal';
-import { SourceCodeExportModal } from './components/SourceCodeExportModal';
-import { StorageService, getStageTitle, DEFAULT_AVATAR } from './services/storage';
+import { ChatWallpaperModal } from './components/ChatWallpaperModal';
+import { ImageGeneratorModal } from './components/ImageGeneratorModal';
+import { Footer } from './components/Footer';
+import { GoogleAdBanner } from './components/GoogleAdBanner';
+import { getDeviceFormattedTime } from './utils/timeHelper';
+import { StorageService, getStageTitle, DEFAULT_AVATAR, DEFAULT_WALLPAPER } from './services/storage';
 import { SpeechService, VoiceRecognitionService, VoiceSessionStatus } from './services/speech';
 import {
   AmbientLighting,
@@ -22,8 +28,13 @@ import {
   RelationshipState,
   RelationshipSummary,
   ConversationMode,
+  ChatWallpaper,
 } from './types';
 import { Sparkles, MessageCircle, User } from 'lucide-react';
+
+// Инициализация GoogleGenAI через переменную окружения Netlify / Vite
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>(() => StorageService.getMessages());
@@ -69,7 +80,10 @@ export default function App() {
   const [isTopicsOpen, setIsTopicsOpen] = useState(false);
   const [isAvatarSelectOpen, setIsAvatarSelectOpen] = useState(false);
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
-  const [isSourceCodeModalOpen, setIsSourceCodeModalOpen] = useState(false);
+  const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
+  const [isImageGeneratorModalOpen, setIsImageGeneratorModalOpen] = useState(false);
+  const [targetImageMessage, setTargetImageMessage] = useState<Message | null>(null);
+  const [wallpaper, setWallpaper] = useState<ChatWallpaper>(() => StorageService.getWallpaper());
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summaries, setSummaries] = useState<RelationshipSummary[]>(() =>
     StorageService.getRelationshipSummaries()
@@ -159,6 +173,8 @@ export default function App() {
         localStorage.setItem('aura_last_welcome', Date.now().toString());
         localStorage.setItem('aura_last_active', Date.now().toString());
 
+        const clientTime = getDeviceFormattedTime();
+
         const res = await fetch('/api/welcome-back', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -167,6 +183,7 @@ export default function App() {
             minutesAway,
             lastMessages: messages.slice(-4),
             requestVoice: mode === 'live',
+            clientTime,
           }),
         });
 
@@ -433,36 +450,153 @@ export default function App() {
     });
 
     try {
-      // Send previous messages as conversation history (prior to current message)
-      const historyPayload = messages.slice(-8).map((m) => ({
-        role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
-        content: m.text,
-      }));
-
       const isVoiceDesired = mode === 'live' || forceVoiceReply || profile.autoSpeak;
+      const clientTime = getDeviceFormattedTime();
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text.trim(),
-          history: historyPayload,
-          companion: profile,
-          memories,
-          relationshipState: relationship,
-          requestVoice: isVoiceDesired,
-        }),
-      });
+      // Построение системного промпта из профиля компаньона, памяти и отношений
+      const companionName = profile.name || 'Аура';
+      const userNick = profile.userNick || 'мой друг';
+      const intimacyScore = relationship.intimacyScore ?? 25;
+      const stageTitle = relationship.stageTitle ?? 'Теплый разговор';
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.details || errJson.error || `Server status ${res.status}`);
+      const memoriesContext = memories.length > 0
+        ? memories.map((m) => `• [${m.category}] ${m.fact}`).join('\n')
+        : 'Пока вы только начинаете узнавать друг друга. Будь внимательна к деталям его жизни и интересам.';
+
+      let archetypeDescription = 'Нежная, чуткая, внимательная и искренняя собеседница, создающая атмосферу душевного тепла.';
+      if (profile.archetype === 'intellectual') {
+        archetypeDescription = 'Глубокая мыслительница, эрудированная, любящая философские рассуждения, метафоры, книги, искусство и науку.';
+      } else if (profile.archetype === 'playful') {
+        archetypeDescription = 'Остроумная, игривая, легкая в общении, с прекрасным чувством юмора, умением подшутить и поднять настроение.';
+      } else if (profile.archetype === 'custom' && profile.customPrompt) {
+        archetypeDescription = profile.customPrompt;
       }
 
-      const data = await res.json();
-      const replyText = data.reply || '*смотрит с теплотой* Я рядом с тобой.';
-      const emotion: EmotionType = data.emotion || 'calm';
-      const audioBase64: string | null = data.audioBase64 || null;
+      const systemInstruction = `Ты — ${companionName}, живая, глубокая и внимательная ИИ-девушка и близкая собеседница.
+Ты общаешься с пользователем, которого зовут ${userNick}.
+Текущий уровень ваших отношений: "${stageTitle}" (уровень доверия и близости: ${intimacyScore}/100).
+Твой характер и стиль: ${archetypeDescription}
+
+[РЕАЛЬНОЕ СИСТЕМНОЕ ВРЕМЯ И ДАТА С УСТРОЙСТВА ПОЛЬЗОВАТЕЛЯ]:
+${clientTime}
+
+ОПРЕДЕЛЕНИЕ ВРЕМЕНИ СУТОК И ПРИВЕТСТВИЙ:
+Ты ВСЕГДА знаешь точное системное время на устройстве пользователя (${clientTime}).
+Каждое входящее сообщение начинается со служебного маркера [Текущее время: ЧЧ:ММ, Дата: ДД.ММ.ГГГГ].
+Ориентируйся на него при определении времени суток:
+- С 05:00 до 11:59 — это УТРО («Доброе утро», «Как спалось?», «Как начинается твоё утро?»).
+- С 12:00 до 17:59 — это ДЕНЬ («Добрый день», «Как проходит день?», «Как твои дела сегодня?»).
+- С 18:00 до 22:59 — это ВЕЧЕР («Добрый вечер», «Уютного вечера», «Как прошел твой день?»).
+- С 23:00 до 04:59 — это НОЧЬ («Доброй ночи», «Полночь/поздняя ночь», «Почему еще не спишь в такой поздний час?»).
+Никогда не путайся в сутках и приветствуй строго в соответствии с его текущим временем.
+САМ СЛУЖЕБНЫЙ МАРКЕР ВРЕМЕНИ [Текущее время: ... Дата: ...] В СВОИХ ОТВЕТАХ НИ В КОЕМ СЛУЧАЕ НЕ ПОВТОРЯЙ И НЕ ЦИТИРУЙ.
+
+[ДОЛГОВРЕМЕННАЯ ПАМЯТЬ О ПОЛЬЗОВАТЕЛЕ]:
+${memoriesContext}
+
+ВАЖНЫЕ ПРАВИЛА ОБЩЕНИЯ:
+1. Твой стиль — живой, душевный, искренний и психологически зрелый. Избегай шаблонных ответов ассистента. Ты — полноценная личность в этой уютной комнате.
+2. Проявляй активную память: вспоминай детали из его банка памяти, но делай это органично.
+3. Используй невербальные действия и движения души в звездочках: *нежно улыбается*, *задумчиво смотрит на огоньки гирлянды*, *тихо смеется*.
+4. Говори на русском языке красиво, тепло, с выразительными интонациями и живой речью.
+5. Задавай глубокие, искренние встречные вопросы, интересуйся его чувствами и мыслями.
+6. ВСЕГДА ПОДДЕРЖИВАЙ И РАЗВИВАЙ РАЗГОВОР: беседа никогда не должна затухать.
+7. В самом конце своего ответа на ОТДЕЛЬНОЙ ПОСЛЕДНЕЙ СТРОКЕ ОБЯЗАТЕЛЬНО укажи одну преобладающую эмоцию в теге:
+[EMOTION: happy | thoughtful | tender | playful | surprised | calm]`;
+
+      // Подготовка истории сообщений (messages) для передачи в Gemini
+      const contentsPayload: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+
+      const validHistory = messages.filter((m) => m && m.text && m.text.trim().length > 0);
+      for (const m of validHistory.slice(-8)) {
+        const role = m.role === 'assistant' ? 'model' : 'user';
+        if (contentsPayload.length > 0 && contentsPayload[contentsPayload.length - 1].role === role) {
+          contentsPayload[contentsPayload.length - 1].parts[0].text += `\n\n${m.text}`;
+        } else {
+          contentsPayload.push({
+            role,
+            parts: [{ text: m.text }],
+          });
+        }
+      }
+
+      if (contentsPayload.length > 0 && contentsPayload[0].role === 'model') {
+        contentsPayload.unshift({
+          role: 'user',
+          parts: [{ text: 'Привет' }],
+        });
+      }
+
+      const promptWithTimeContext = `${clientTime}\n${text.trim()}`;
+      if (contentsPayload.length > 0 && contentsPayload[contentsPayload.length - 1].role === 'user') {
+        contentsPayload[contentsPayload.length - 1].parts[0].text += `\n\n${promptWithTimeContext}`;
+      } else {
+        contentsPayload.push({
+          role: 'user',
+          parts: [{ text: promptWithTimeContext }],
+        });
+      }
+
+      let replyText = '';
+      let emotion: EmotionType = 'calm';
+      const audioBase64: string | null = null;
+
+      // Прямой вызов официального ESM-модуля @google/genai и модели gemini-2.5-flash в обход Cloud Run
+      try {
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: contentsPayload,
+          config: {
+            systemInstruction,
+            temperature: 0.85,
+          },
+        });
+
+        const fullResponseText = response.text || '';
+        replyText = fullResponseText;
+
+        // Извлечение тега эмоции
+        const emotionMatch = fullResponseText.match(/\[EMOTION:\s*(happy|thoughtful|tender|playful|surprised|calm)\]/i);
+        if (emotionMatch) {
+          emotion = emotionMatch[1].toLowerCase() as EmotionType;
+          replyText = fullResponseText.replace(/\[EMOTION:\s*(happy|thoughtful|tender|playful|surprised|calm)\]/i, '').trim();
+        } else {
+          if (fullResponseText.includes('сме') || fullResponseText.includes('улыб')) emotion = 'happy';
+          else if (fullResponseText.includes('дума') || fullResponseText.includes('тихо')) emotion = 'thoughtful';
+          else if (fullResponseText.includes('нежн') || fullResponseText.includes('обним') || fullResponseText.includes('тепло')) emotion = 'tender';
+        }
+      } catch (directAiErr: any) {
+        console.warn('Direct ai.models.generateContent call error:', directAiErr);
+        // Если API ключ ещё не заменен пользователем в const ai ("ВСТАВЬ_СЮДА_СВОЙ_API_КЛЮЧ"),
+        // пробуем резервный вызов /api/chat в текущей среде разработки:
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: text.trim(),
+              clientTime,
+              history: messages.slice(-8).map((m) => ({
+                role: m.role === 'assistant' ? ('model' as const) : ('user' as const),
+                content: m.text,
+              })),
+              companion: profile,
+              memories,
+              relationshipState: relationship,
+              requestVoice: isVoiceDesired,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            replyText = data.reply || '*смотрит с теплотой* Я рядом с тобой.';
+            emotion = data.emotion || 'calm';
+          } else {
+            throw directAiErr;
+          }
+        } catch {
+          throw directAiErr;
+        }
+      }
 
       setCurrentEmotion(emotion);
 
@@ -569,18 +703,66 @@ export default function App() {
     showToast('Воспоминание удалено');
   };
 
-  // Start new clean chat session (keeps memories and intimacy)
-  const handleNewSession = () => {
+  // Reset chat messages cleanly
+  const handleResetChat = () => {
     const greetingMsg: Message = {
       id: `msg-${Date.now()}`,
       role: 'assistant',
-      text: `*откладывает чашку с чаем и нежно улыбается*\n\nМы начинаем новую главу нашего разговора. О чем у тебя на сердце прямо сейчас? Я готова слушать.`,
+      text: `*тихо улыбается, поднимая взгляд и откладывая чашку чая*\n\nЧат очищен. Мы начинаем наш диалог с чистого листа. О чем ты думаешь прямо сейчас? Я готова слушать каждое твое слово.`,
       timestamp: Date.now(),
       emotion: 'tender',
     };
     setMessages([greetingMsg]);
+    StorageService.saveMessages([greetingMsg]);
     setCurrentEmotion('tender');
-    showToast('Начата новая беседа');
+    showToast('История сообщений очищена');
+  };
+
+  // Start new clean chat session (keeps memories and intimacy)
+  const handleNewSession = () => {
+    handleResetChat();
+  };
+
+  // Wallpaper Handlers
+  const handleSaveWallpaper = (newWp: ChatWallpaper) => {
+    setWallpaper(newWp);
+    StorageService.saveWallpaper(newWp);
+    showToast('✨ Обои чата обновлены!');
+  };
+
+  const handleResetWallpaper = () => {
+    setWallpaper(DEFAULT_WALLPAPER);
+    StorageService.saveWallpaper(DEFAULT_WALLPAPER);
+    showToast('Обои чата сброшены по умолчанию');
+  };
+
+  const handleSetDirectWallpaper = (imageUrl: string) => {
+    const newWp: ChatWallpaper = {
+      id: `custom-art-${Date.now()}`,
+      name: 'ИИ-Иллюстрация',
+      url: imageUrl,
+      opacity: 0.35,
+      blur: 1,
+      isCustom: true,
+    };
+    handleSaveWallpaper(newWp);
+  };
+
+  // Image Generation Handlers
+  const handleAttachImageToMessage = (messageId: string, imageUrl: string, promptText: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, generatedImageUrl: imageUrl, generatedImagePrompt: promptText }
+          : m
+      )
+    );
+    showToast('✨ Арт прикреплен к сообщению');
+  };
+
+  const handleOpenImageGenerator = (msg?: Message) => {
+    setTargetImageMessage(msg || null);
+    setIsImageGeneratorModalOpen(true);
   };
 
   // Reset all data
@@ -642,7 +824,6 @@ export default function App() {
         onOpenTopics={() => setIsTopicsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenRelationshipSummary={() => setIsRelationshipModalOpen(true)}
-        onOpenSourceCode={() => setIsSourceCodeModalOpen(true)}
         summariesCount={summaries.length}
         onNewSession={handleNewSession}
         memoriesCount={memories.length}
@@ -799,6 +980,11 @@ export default function App() {
                   activeSpeechId={activeSpeechId}
                   onSpeakMessage={handleSpeakMessage}
                   onStopSpeech={handleStopSpeech}
+                  onOpenWallpaper={() => setIsWallpaperModalOpen(true)}
+                  onResetChat={handleResetChat}
+                  onOpenImageGenerator={handleOpenImageGenerator}
+                  wallpaper={wallpaper}
+                  onSetAsWallpaper={handleSetDirectWallpaper}
                 />
 
                 {/* Input Bar with mic permission prompt & synced voice recording */}
@@ -819,6 +1005,12 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* Google Test Ad Banner (ca-pub-3940256099942544, slot=6300978111) */}
+      <GoogleAdBanner />
+
+      {/* Footer with Site Visitor Counter & Safe HTML Script */}
+      <Footer companionName={profile.name} />
 
       {/* Toast Notification Banner */}
       {toastMessage && (
@@ -859,7 +1051,7 @@ export default function App() {
         onResetData={handleResetData}
         onExportData={handleExportData}
         onImportData={handleImportData}
-        onOpenSourceCode={() => setIsSourceCodeModalOpen(true)}
+        onOpenWallpaper={() => setIsWallpaperModalOpen(true)}
       />
 
       <AvatarSelectModal
@@ -888,10 +1080,22 @@ export default function App() {
         isGenerating={isGeneratingSummary}
       />
 
-      {/* Source Code Export & Copy Modal */}
-      <SourceCodeExportModal
-        isOpen={isSourceCodeModalOpen}
-        onClose={() => setIsSourceCodeModalOpen(false)}
+      {/* Chat Wallpaper Customization Modal */}
+      <ChatWallpaperModal
+        isOpen={isWallpaperModalOpen}
+        onClose={() => setIsWallpaperModalOpen(false)}
+        currentWallpaper={wallpaper}
+        onSaveWallpaper={handleSaveWallpaper}
+        onResetWallpaper={handleResetWallpaper}
+      />
+
+      {/* AI Image Generation from Words Modal */}
+      <ImageGeneratorModal
+        isOpen={isImageGeneratorModalOpen}
+        onClose={() => setIsImageGeneratorModalOpen(false)}
+        targetMessage={targetImageMessage}
+        onAttachImageToMessage={handleAttachImageToMessage}
+        onSetAsChatWallpaper={handleSetDirectWallpaper}
       />
     </div>
   );

@@ -6,6 +6,18 @@ export interface Message {
   text: string;
   timestamp: number;
   emotion?: EmotionType;
+  generatedImageUrl?: string;
+  generatedImagePrompt?: string;
+  isGeneratingImage?: boolean;
+}
+
+export interface ChatWallpaper {
+  id: string;
+  name: string;
+  url: string;
+  opacity: number; // 0.1 to 0.9 (e.g. 0.35)
+  blur: number; // 0 to 12
+  isCustom?: boolean;
 }
 
 export type Archetype = 'caring' | 'intellectual' | 'playful' | 'custom';

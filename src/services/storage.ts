@@ -1,4 +1,4 @@
-import { CompanionProfile, MemoryFact, Message, RelationshipState, RelationshipSummary, AvatarOption } from '../types';
+import { CompanionProfile, MemoryFact, Message, RelationshipState, RelationshipSummary, AvatarOption, ChatWallpaper } from '../types';
 
 const STORAGE_KEYS = {
   MESSAGES: 'aura_companion_messages_v1',
@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   MEMORIES: 'aura_companion_memories_v1',
   RELATIONSHIP: 'aura_companion_relationship_v1',
   SUMMARIES: 'aura_companion_summaries_v1',
+  WALLPAPER: 'aura_companion_wallpaper_v1',
 };
 
 export const ANIME_AVATARS: AvatarOption[] = [
@@ -244,11 +245,104 @@ export const StorageService = {
     return updated;
   },
 
+  getWallpaper(): ChatWallpaper {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.WALLPAPER);
+      return data ? JSON.parse(data) : DEFAULT_WALLPAPER;
+    } catch {
+      return DEFAULT_WALLPAPER;
+    }
+  },
+
+  saveWallpaper(wallpaper: ChatWallpaper) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.WALLPAPER, JSON.stringify(wallpaper));
+    } catch (e) {
+      console.warn('Could not save wallpaper', e);
+    }
+  },
+
   clearAllData() {
     localStorage.removeItem(STORAGE_KEYS.MESSAGES);
     localStorage.removeItem(STORAGE_KEYS.PROFILE);
     localStorage.removeItem(STORAGE_KEYS.MEMORIES);
     localStorage.removeItem(STORAGE_KEYS.RELATIONSHIP);
     localStorage.removeItem(STORAGE_KEYS.SUMMARIES);
+    localStorage.removeItem(STORAGE_KEYS.WALLPAPER);
   },
 };
+
+export const WALLPAPER_PRESETS: ChatWallpaper[] = [
+  {
+    id: 'starry_room',
+    name: 'Звёздная комната',
+    url: '/src/assets/images/starry_sky_room_1791791032355.jpg',
+    opacity: 0.35,
+    blur: 1,
+  },
+  {
+    id: 'rainy_window',
+    name: 'Дождливое окно',
+    url: '/src/assets/images/rainy_window_evening_1791791051984.jpg',
+    opacity: 0.35,
+    blur: 1,
+  },
+  {
+    id: 'cozy_room',
+    name: 'Уютный вечер',
+    url: '/src/assets/images/cozy_room_backdrop_1791625398817.jpg',
+    opacity: 0.35,
+    blur: 1,
+  },
+  {
+    id: 'none',
+    name: 'Без обоев (Тёмный)',
+    url: '',
+    opacity: 0,
+    blur: 0,
+  },
+];
+
+export const DEFAULT_WALLPAPER: ChatWallpaper = WALLPAPER_PRESETS[0];
+
+/**
+ * Reads and optimizes an uploaded image from phone or PC into compressed Base64 JPEG
+ */
+export async function processUploadedWallpaper(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDimension = 1920;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress as JPEG 0.85 to save space in localStorage
+        const compressed = canvas.toDataURL('image/jpeg', 0.85);
+        resolve(compressed);
+      };
+      img.onerror = () => reject(new Error('Не удалось прочитать изображение'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
